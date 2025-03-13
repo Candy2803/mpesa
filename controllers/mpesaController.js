@@ -201,10 +201,7 @@ exports.handleCallback = async (req, res) => {
         await axios.post(
           `https://mwg-app-api.vercel.app/api/contributions/${transaction.userId}/contributions`,
           {
-            phoneNumber: transaction.phoneNumber,
             amount: transaction.amount,
-            merchantRequestID: transaction.merchantRequestID,
-            checkoutRequestID: transaction.checkoutRequestID,
             mpesaReceiptNumber: transaction.mpesaReceiptNumber,
             transactionDate: transaction.transactionDate,
             status: transaction.status,
