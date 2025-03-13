@@ -4,7 +4,6 @@ const mpesaConfig = require('../config/mpesa');
 const axios = require('axios');
 
 // Initiate STK Push
-// Initiate STK Push
 exports.initiateSTKPush = async (req, res) => {
   try {
     const { phoneNumber, amount, reference, description } = req.body;
@@ -14,54 +13,45 @@ exports.initiateSTKPush = async (req, res) => {
       return res.status(400).json({ error: 'Phone number and amount are required' });
     }
     
-    // Format phone number (remove leading 0 or +254)
     // Format phone number to 2547XXXXXXXX
-let formattedPhone = phoneNumber.trim();
-
-// If the number starts with '0', replace it with '254'
-if (formattedPhone.startsWith('0')) {
-  formattedPhone = '254' + formattedPhone.substring(1);
-} else if (formattedPhone.startsWith('+254')) {
-  // Remove the '+' sign if it starts with '+254'
-  formattedPhone = formattedPhone.substring(1);
-} else if (!formattedPhone.startsWith('254')) {
-  // Optionally, throw an error or prompt the user if the number is in an unexpected format.
-  return res.status(400).json({ error: 'Invalid phone number format' });
-}
-
-// Optionally, check if the formatted number has the correct length (12 digits: 254 followed by 9 digits)
-if (formattedPhone.length !== 12) {
-  return res.status(400).json({ error: 'Phone number must be 12 digits in the format 2547XXXXXXXX' });
-}
-
+    let formattedPhone = phoneNumber.trim();
+    if (formattedPhone.startsWith('0')) {
+      formattedPhone = '254' + formattedPhone.substring(1);
+    } else if (formattedPhone.startsWith('+254')) {
+      formattedPhone = formattedPhone.substring(1);
+    } else if (!formattedPhone.startsWith('254')) {
+      return res.status(400).json({ error: 'Invalid phone number format' });
+    }
+    if (formattedPhone.length !== 12) {
+      return res.status(400).json({ error: 'Phone number must be 12 digits in the format 2547XXXXXXXX' });
+    }
     
     // Get access token
     const token = await mpesaHelpers.getAccessToken();
     
-    // Generate timestamp
+    // Generate timestamp and password
     const timestamp = mpesaHelpers.generateTimestamp();
-    
-    // Generate password using your passkey, shortcode, and timestamp
     const password = mpesaHelpers.generatePassword(timestamp);
     
-    // Prepare STK Push request with fixed paybill and account number
+    // Prepare STK Push request using fixed paybill and account number
     const stkPushRequestBody = {
-      BusinessShortCode: "500005",            // Fixed paybill number
+      BusinessShortCode: "500005",          // Fixed paybill
       Password: password,
       Timestamp: timestamp,
       TransactionType: 'CustomerPayBillOnline',
       Amount: amount,
       PartyA: formattedPhone,
-      PartyB: "500005",                        // Same as BusinessShortCode
+      PartyB: "500005",                     // Fixed paybill as PartyB
       PhoneNumber: formattedPhone,
       CallBackURL: mpesaConfig.callbackUrl,
-      AccountReference: "BA0619032",           // Fixed account number
+      AccountReference: "BA0619032",        // Fixed account number
       TransactionDesc: description || 'Payment'
     };
     
-    // Make STK Push request
+    // Make STK Push request to your deployed M-PESA API integration endpoint
     const response = await axios.post(
-      mpesaConfig.endpoints.stkPush(),
+      // Use your deployed endpoint instead of the default endpoint from config if needed:
+      'https://mpesa-c874.vercel.app/api/mpesa/payment',
       stkPushRequestBody,
       {
         headers: {
@@ -82,12 +72,11 @@ if (formattedPhone.length !== 12) {
       responseCode: response.data.ResponseCode,
       responseDescription: response.data.ResponseDescription,
       customerMessage: response.data.CustomerMessage,
-      // mpesaReceiptNumber will be added in the callback
+      // mpesaReceiptNumber will be updated in the callback
     });
     
     await transaction.save();
     
-    // Return response
     return res.status(200).json({
       success: true,
       message: 'STK Push initiated successfully',
@@ -97,8 +86,6 @@ if (formattedPhone.length !== 12) {
     
   } catch (error) {
     console.error('Error initiating STK Push:', error);
-    
-    // Handle duplicate transaction error for checkoutRequestID
     if (error.code === 11000 && error.keyPattern && error.keyPattern.checkoutRequestID) {
       return res.status(409).json({
         success: false,
