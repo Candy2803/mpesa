@@ -26,7 +26,7 @@ const transactionSchema = new mongoose.Schema({
   mpesaReceiptNumber: {
     type: String,
     unique: true,
-    sparse: true  // This makes the index only apply to documents that have the field
+    sparse: true
   },
   transactionDate: Date,
   status: {
@@ -36,7 +36,6 @@ const transactionSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-// Add a compound index to ensure uniqueness of checkoutRequestID
 transactionSchema.index({ checkoutRequestID: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Transaction', transactionSchema);
