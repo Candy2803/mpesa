@@ -4,13 +4,14 @@ const mpesaConfig = require('../config/mpesa');
 const axios = require('axios');
 
 // Initiate STK Push
+// Initiate STK Push
 exports.initiateSTKPush = async (req, res) => {
   try {
     const { phoneNumber, amount, reference, description } = req.body;
     
     // Validate request
     if (!phoneNumber || !amount) {
-      return res.status(400).json({ error: 'Phone number, amount are required' });
+      return res.status(400).json({ error: 'Phone number and amount are required' });
     }
     
     // Format phone number (remove leading 0 or +254)
@@ -27,21 +28,21 @@ exports.initiateSTKPush = async (req, res) => {
     // Generate timestamp
     const timestamp = mpesaHelpers.generateTimestamp();
     
-    // Generate password
+    // Generate password using your passkey, shortcode, and timestamp
     const password = mpesaHelpers.generatePassword(timestamp);
     
-    // Prepare STK Push request
+    // Prepare STK Push request with fixed paybill and account number
     const stkPushRequestBody = {
-      BusinessShortCode: mpesaConfig.shortcode,
+      BusinessShortCode: "500005",            // Fixed paybill number
       Password: password,
       Timestamp: timestamp,
       TransactionType: 'CustomerPayBillOnline',
       Amount: amount,
       PartyA: formattedPhone,
-      PartyB: mpesaConfig.shortcode,
+      PartyB: "500005",                        // Same as BusinessShortCode
       PhoneNumber: formattedPhone,
       CallBackURL: mpesaConfig.callbackUrl,
-      AccountReference: reference || 'Payment',
+      AccountReference: "BA0619032",           // Fixed account number
       TransactionDesc: description || 'Payment'
     };
     
@@ -61,14 +62,14 @@ exports.initiateSTKPush = async (req, res) => {
     const transaction = new Transaction({
       phoneNumber: formattedPhone,
       amount,
-      reference,
+      reference: reference || 'Payment',
       description: description || 'Payment',
       merchantRequestID: response.data.MerchantRequestID,
       checkoutRequestID: response.data.CheckoutRequestID,
       responseCode: response.data.ResponseCode,
       responseDescription: response.data.ResponseDescription,
       customerMessage: response.data.CustomerMessage,
-      // Don't set mpesaReceiptNumber at this stage, it will be added in the callback
+      // mpesaReceiptNumber will be added in the callback
     });
     
     await transaction.save();
@@ -84,7 +85,7 @@ exports.initiateSTKPush = async (req, res) => {
   } catch (error) {
     console.error('Error initiating STK Push:', error);
     
-    // Check if it's a duplicate key error specifically for an already initiated transaction
+    // Handle duplicate transaction error for checkoutRequestID
     if (error.code === 11000 && error.keyPattern && error.keyPattern.checkoutRequestID) {
       return res.status(409).json({
         success: false,
@@ -100,6 +101,7 @@ exports.initiateSTKPush = async (req, res) => {
     });
   }
 };
+
 
 
 // Handle callback from M-PESA
