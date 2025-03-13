@@ -4,15 +4,16 @@ const mpesaConfig = require('../config/mpesa');
 const axios = require('axios');
 
 // Initiate STK Push
+// Initiate STK Push
 exports.initiateSTKPush = async (req, res) => {
   try {
     const { phoneNumber, amount, reference, description } = req.body;
-    
+
     // Validate request
     if (!phoneNumber || !amount) {
       return res.status(400).json({ error: 'Phone number and amount are required' });
     }
-    
+
     // Format phone number to 2547XXXXXXXX
     let formattedPhone = phoneNumber.trim();
     if (formattedPhone.startsWith('0')) {
@@ -25,14 +26,14 @@ exports.initiateSTKPush = async (req, res) => {
     if (formattedPhone.length !== 12) {
       return res.status(400).json({ error: 'Phone number must be 12 digits in the format 2547XXXXXXXX' });
     }
-    
+
     // Get access token
     const token = await mpesaHelpers.getAccessToken();
-    
+
     // Generate timestamp and password
     const timestamp = mpesaHelpers.generateTimestamp();
     const password = mpesaHelpers.generatePassword(timestamp);
-    
+
     // Prepare STK Push request using fixed paybill and account number
     const stkPushRequestBody = {
       BusinessShortCode: "500005",          // Fixed paybill
@@ -47,11 +48,10 @@ exports.initiateSTKPush = async (req, res) => {
       AccountReference: "BA0619032",        // Fixed account number
       TransactionDesc: description || 'Payment'
     };
-    
-    // Make STK Push request to your deployed M-PESA API integration endpoint
+
+    // Make STK Push request
     const response = await axios.post(
-      // Use your deployed endpoint instead of the default endpoint from config if needed:
-      'https://mpesa-c874.vercel.app/api/mpesa/stkpush',
+      'https://mpesa-c874.vercel.app/api/mpesa/stkpush', // Your deployed endpoint
       stkPushRequestBody,
       {
         headers: {
@@ -60,7 +60,7 @@ exports.initiateSTKPush = async (req, res) => {
         }
       }
     );
-    
+
     // Save transaction to database
     const transaction = new Transaction({
       phoneNumber: formattedPhone,
@@ -72,18 +72,17 @@ exports.initiateSTKPush = async (req, res) => {
       responseCode: response.data.ResponseCode,
       responseDescription: response.data.ResponseDescription,
       customerMessage: response.data.CustomerMessage,
-      // mpesaReceiptNumber will be updated in the callback
     });
-    
+
     await transaction.save();
-    
+
     return res.status(200).json({
       success: true,
       message: 'STK Push initiated successfully',
       data: response.data,
       transactionId: transaction._id
     });
-    
+
   } catch (error) {
     console.error('Error initiating STK Push:', error);
     if (error.code === 11000 && error.keyPattern && error.keyPattern.checkoutRequestID) {
