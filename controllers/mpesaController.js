@@ -4,16 +4,17 @@ const mpesaConfig = require('../config/mpesa');
 const axios = require('axios');
 
 // Initiate STK Push
+// controllers/mpesaController.js
+
 exports.initiateSTKPush = async (req, res) => {
   try {
-    const { phoneNumber, amount, reference, description } = req.body;
+    const { phoneNumber, amount, reference, description, userId } = req.body;
     
-    // Validate request
     if (!phoneNumber || !amount) {
       return res.status(400).json({ error: 'Phone number, amount are required' });
     }
     
-    // Format phone number (remove leading 0 or +254)
+    // Format phone number
     let formattedPhone = phoneNumber;
     if (phoneNumber.startsWith('0')) {
       formattedPhone = '254' + phoneNumber.substring(1);
@@ -21,16 +22,10 @@ exports.initiateSTKPush = async (req, res) => {
       formattedPhone = phoneNumber.substring(1);
     }
     
-    // Get access token
     const token = await mpesaHelpers.getAccessToken();
-    
-    // Generate timestamp
     const timestamp = mpesaHelpers.generateTimestamp();
-    
-    // Generate password
     const password = mpesaHelpers.generatePassword(timestamp);
     
-    // Prepare STK Push request
     const stkPushRequestBody = {
       BusinessShortCode: mpesaConfig.shortcode,
       Password: password,
@@ -45,7 +40,6 @@ exports.initiateSTKPush = async (req, res) => {
       TransactionDesc: description || 'Payment'
     };
     
-    // Make STK Push request
     const response = await axios.post(
       mpesaConfig.endpoints.stkPush(),
       stkPushRequestBody,
@@ -57,8 +51,9 @@ exports.initiateSTKPush = async (req, res) => {
       }
     );
     
-    // Save transaction to database
+    // Create a new transaction record including the userId
     const transaction = new Transaction({
+      userId,  // save the logged in user's id
       phoneNumber: formattedPhone,
       amount,
       reference,
@@ -68,12 +63,10 @@ exports.initiateSTKPush = async (req, res) => {
       responseCode: response.data.ResponseCode,
       responseDescription: response.data.ResponseDescription,
       customerMessage: response.data.CustomerMessage,
-      // Don't set mpesaReceiptNumber at this stage, it will be added in the callback
     });
     
     await transaction.save();
     
-    // Return response
     return res.status(200).json({
       success: true,
       message: 'STK Push initiated successfully',
@@ -83,8 +76,6 @@ exports.initiateSTKPush = async (req, res) => {
     
   } catch (error) {
     console.error('Error initiating STK Push:', error);
-    
-    // Check if it's a duplicate key error specifically for an already initiated transaction
     if (error.code === 11000 && error.keyPattern && error.keyPattern.checkoutRequestID) {
       return res.status(409).json({
         success: false,
@@ -209,7 +200,13 @@ exports.handleCallback = async (req, res) => {
 // Get all transactions
 exports.getTransactions = async (req, res) => {
   try {
-    const transactions = await Transaction.find().sort({ createdAt: -1 });
+    // Expect the userId in the URL parameters
+    const userId = req.params.userId;
+    if (!userId) {
+      return res.status(400).json({ success: false, message: 'User ID is required' });
+    }
+    
+    const transactions = await Transaction.find({ userId }).sort({ createdAt: -1 });
     
     return res.status(200).json({
       success: true,
@@ -225,6 +222,7 @@ exports.getTransactions = async (req, res) => {
     });
   }
 };
+
 
 // Get transaction by ID
 exports.getTransactionById = async (req, res) => {

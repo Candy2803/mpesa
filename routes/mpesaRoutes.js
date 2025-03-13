@@ -8,10 +8,10 @@ router.post('/stkpush', mpesaController.initiateSTKPush);
 // Handle callback from M-PESA
 router.post('/callback', mpesaController.handleCallback);
 
-// Get all transactions
-router.get('/transactions', mpesaController.getTransactions);
+// Get transactions for a specific user
+router.get('/transactions/:userId', mpesaController.getTransactions);
 
 // Get transaction by ID
-router.get('/transactions/:id', mpesaController.getTransactionById);
+router.get('/transaction/:id', mpesaController.getTransactionById);
 
 module.exports = router;
