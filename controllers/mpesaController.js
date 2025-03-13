@@ -10,6 +10,7 @@ exports.initiateSTKPush = async (req, res) => {
   try {
     const { phoneNumber, amount, reference, description, userId } = req.body;
     
+    
     if (!phoneNumber || !amount) {
       return res.status(400).json({ error: 'Phone number, amount are required' });
     }
