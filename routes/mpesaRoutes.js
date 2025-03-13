@@ -3,7 +3,7 @@ const router = express.Router();
 const mpesaController = require('../controllers/mpesaController');
 
 // Initiate STK Push
-router.post('/stkpush', mpesaController.initiateSTKPush);
+router.post('/stkpush/:userId', mpesaController.initiateSTKPush);
 
 // Handle callback from M-PESA
 router.post('/callback', mpesaController.handleCallback);
