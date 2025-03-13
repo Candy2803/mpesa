@@ -7,13 +7,19 @@ const axios = require('axios');
 // Initiate STK Push
 exports.initiateSTKPush = async (req, res) => {
   try {
+    console.log("Request Body:", req.body);
     const { phoneNumber, amount, reference, description } = req.body;
-
-    // Validate request
-    if (!phoneNumber || !amount) {
+    
+    // Enhanced validation: Check that phoneNumber and amount are not empty after trimming
+    if (!phoneNumber || phoneNumber.trim() === "" || !amount || amount.toString().trim() === "") {
       return res.status(400).json({ error: 'Phone number and amount are required' });
     }
-
+    
+    // Optionally, ensure amount is greater than 0
+    if (Number(amount) <= 0) {
+      return res.status(400).json({ error: 'Amount must be greater than zero' });
+    }
+    
     // Format phone number to 2547XXXXXXXX
     let formattedPhone = phoneNumber.trim();
     if (formattedPhone.startsWith('0')) {
@@ -26,32 +32,28 @@ exports.initiateSTKPush = async (req, res) => {
     if (formattedPhone.length !== 12) {
       return res.status(400).json({ error: 'Phone number must be 12 digits in the format 2547XXXXXXXX' });
     }
-
-    // Get access token
+    
+    // Proceed with token retrieval, timestamp, password, etc...
     const token = await mpesaHelpers.getAccessToken();
-
-    // Generate timestamp and password
     const timestamp = mpesaHelpers.generateTimestamp();
     const password = mpesaHelpers.generatePassword(timestamp);
-
-    // Prepare STK Push request using fixed paybill and account number
+    
     const stkPushRequestBody = {
-      BusinessShortCode: "500005",          // Fixed paybill
+      BusinessShortCode: "500005",
       Password: password,
       Timestamp: timestamp,
       TransactionType: 'CustomerPayBillOnline',
       Amount: amount,
       PartyA: formattedPhone,
-      PartyB: "500005",                     // Fixed paybill as PartyB
+      PartyB: "500005",
       PhoneNumber: formattedPhone,
       CallBackURL: mpesaConfig.callbackUrl,
-      AccountReference: "BA0619032",        // Fixed account number
+      AccountReference: "BA0619032",
       TransactionDesc: description || 'Payment'
     };
-
-    // Make STK Push request
+    
     const response = await axios.post(
-      'https://mpesa-c874.vercel.app/api/mpesa/stkpush', // Your deployed endpoint
+      'https://mpesa-c874.vercel.app/api/mpesa/stkpush',
       stkPushRequestBody,
       {
         headers: {
@@ -60,8 +62,7 @@ exports.initiateSTKPush = async (req, res) => {
         }
       }
     );
-
-    // Save transaction to database
+    
     const transaction = new Transaction({
       phoneNumber: formattedPhone,
       amount,
@@ -73,16 +74,16 @@ exports.initiateSTKPush = async (req, res) => {
       responseDescription: response.data.ResponseDescription,
       customerMessage: response.data.CustomerMessage,
     });
-
+    
     await transaction.save();
-
+    
     return res.status(200).json({
       success: true,
       message: 'STK Push initiated successfully',
       data: response.data,
       transactionId: transaction._id
     });
-
+    
   } catch (error) {
     console.error('Error initiating STK Push:', error);
     if (error.code === 11000 && error.keyPattern && error.keyPattern.checkoutRequestID) {
@@ -100,7 +101,6 @@ exports.initiateSTKPush = async (req, res) => {
     });
   }
 };
-
 
 
 // Handle callback from M-PESA
