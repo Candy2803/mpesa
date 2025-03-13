@@ -15,12 +15,25 @@ exports.initiateSTKPush = async (req, res) => {
     }
     
     // Format phone number (remove leading 0 or +254)
-    let formattedPhone = phoneNumber;
-    if (phoneNumber.startsWith('0')) {
-      formattedPhone = '254' + phoneNumber.substring(1);
-    } else if (phoneNumber.startsWith('+254')) {
-      formattedPhone = phoneNumber.substring(1);
-    }
+    // Format phone number to 2547XXXXXXXX
+let formattedPhone = phoneNumber.trim();
+
+// If the number starts with '0', replace it with '254'
+if (formattedPhone.startsWith('0')) {
+  formattedPhone = '254' + formattedPhone.substring(1);
+} else if (formattedPhone.startsWith('+254')) {
+  // Remove the '+' sign if it starts with '+254'
+  formattedPhone = formattedPhone.substring(1);
+} else if (!formattedPhone.startsWith('254')) {
+  // Optionally, throw an error or prompt the user if the number is in an unexpected format.
+  return res.status(400).json({ error: 'Invalid phone number format' });
+}
+
+// Optionally, check if the formatted number has the correct length (12 digits: 254 followed by 9 digits)
+if (formattedPhone.length !== 12) {
+  return res.status(400).json({ error: 'Phone number must be 12 digits in the format 2547XXXXXXXX' });
+}
+
     
     // Get access token
     const token = await mpesaHelpers.getAccessToken();
