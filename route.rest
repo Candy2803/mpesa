@@ -1,4 +1,4 @@
-POST https://32ff-41-139-202-31.ngrok-free.app/api/mpesa/stkpush
+POST https://mpesa-c874.vercel.app/api/mpesa/stkpush
 Content-Type: application/json
 
 {
