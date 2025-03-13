@@ -4,56 +4,50 @@ const mpesaConfig = require('../config/mpesa');
 const axios = require('axios');
 
 // Initiate STK Push
-// Initiate STK Push
 exports.initiateSTKPush = async (req, res) => {
   try {
-    console.log("Request Body:", req.body);
     const { phoneNumber, amount, reference, description } = req.body;
     
-    // Enhanced validation: Check that phoneNumber and amount are not empty after trimming
-    if (!phoneNumber || phoneNumber.trim() === "" || !amount || amount.toString().trim() === "") {
-      return res.status(400).json({ error: 'Phone number and amount are required' });
+    // Validate request
+    if (!phoneNumber || !amount) {
+      return res.status(400).json({ error: 'Phone number, amount are required' });
     }
     
-    // Optionally, ensure amount is greater than 0
-    if (Number(amount) <= 0) {
-      return res.status(400).json({ error: 'Amount must be greater than zero' });
+    // Format phone number (remove leading 0 or +254)
+    let formattedPhone = phoneNumber;
+    if (phoneNumber.startsWith('0')) {
+      formattedPhone = '254' + phoneNumber.substring(1);
+    } else if (phoneNumber.startsWith('+254')) {
+      formattedPhone = phoneNumber.substring(1);
     }
     
-    // Format phone number to 2547XXXXXXXX
-    let formattedPhone = phoneNumber.trim();
-    if (formattedPhone.startsWith('0')) {
-      formattedPhone = '254' + formattedPhone.substring(1);
-    } else if (formattedPhone.startsWith('+254')) {
-      formattedPhone = formattedPhone.substring(1);
-    } else if (!formattedPhone.startsWith('254')) {
-      return res.status(400).json({ error: 'Invalid phone number format' });
-    }
-    if (formattedPhone.length !== 12) {
-      return res.status(400).json({ error: 'Phone number must be 12 digits in the format 2547XXXXXXXX' });
-    }
-    
-    // Proceed with token retrieval, timestamp, password, etc...
+    // Get access token
     const token = await mpesaHelpers.getAccessToken();
+    
+    // Generate timestamp
     const timestamp = mpesaHelpers.generateTimestamp();
+    
+    // Generate password
     const password = mpesaHelpers.generatePassword(timestamp);
     
+    // Prepare STK Push request
     const stkPushRequestBody = {
-      BusinessShortCode: "500005",
+      BusinessShortCode: mpesaConfig.shortcode,
       Password: password,
       Timestamp: timestamp,
       TransactionType: 'CustomerPayBillOnline',
       Amount: amount,
       PartyA: formattedPhone,
-      PartyB: "500005",
+      PartyB: mpesaConfig.shortcode,
       PhoneNumber: formattedPhone,
       CallBackURL: mpesaConfig.callbackUrl,
-      AccountReference: "BA0619032",
+      AccountReference: reference || 'Payment',
       TransactionDesc: description || 'Payment'
     };
     
+    // Make STK Push request
     const response = await axios.post(
-      'https://mpesa-c874.vercel.app/api/mpesa/stkpush',
+      mpesaConfig.endpoints.stkPush(),
       stkPushRequestBody,
       {
         headers: {
@@ -63,20 +57,23 @@ exports.initiateSTKPush = async (req, res) => {
       }
     );
     
+    // Save transaction to database
     const transaction = new Transaction({
       phoneNumber: formattedPhone,
       amount,
-      reference: reference || 'Payment',
+      reference,
       description: description || 'Payment',
       merchantRequestID: response.data.MerchantRequestID,
       checkoutRequestID: response.data.CheckoutRequestID,
       responseCode: response.data.ResponseCode,
       responseDescription: response.data.ResponseDescription,
       customerMessage: response.data.CustomerMessage,
+      // Don't set mpesaReceiptNumber at this stage, it will be added in the callback
     });
     
     await transaction.save();
     
+    // Return response
     return res.status(200).json({
       success: true,
       message: 'STK Push initiated successfully',
@@ -86,6 +83,8 @@ exports.initiateSTKPush = async (req, res) => {
     
   } catch (error) {
     console.error('Error initiating STK Push:', error);
+    
+    // Check if it's a duplicate key error specifically for an already initiated transaction
     if (error.code === 11000 && error.keyPattern && error.keyPattern.checkoutRequestID) {
       return res.status(409).json({
         success: false,
