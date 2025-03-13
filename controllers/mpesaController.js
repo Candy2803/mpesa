@@ -51,7 +51,7 @@ exports.initiateSTKPush = async (req, res) => {
     // Make STK Push request to your deployed M-PESA API integration endpoint
     const response = await axios.post(
       // Use your deployed endpoint instead of the default endpoint from config if needed:
-      'https://mpesa-c874.vercel.app/api/mpesa/payment',
+      'https://mpesa-c874.vercel.app/api/mpesa/stkpush',
       stkPushRequestBody,
       {
         headers: {
