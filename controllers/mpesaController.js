@@ -199,7 +199,7 @@ exports.handleCallback = async (req, res) => {
     if (transaction.status === 'completed' && transaction.userId) {
       try {
         await axios.post(
-          `https://mwg-app-api.vercel.app/api/contributions/${transaction.userId}/contributions`,
+          `https://mwg-app-api.vercel.app/api/contributions/${userId}/contributions`,
           {
             amount: transaction.amount,
             mpesaReceiptNumber: transaction.mpesaReceiptNumber,
