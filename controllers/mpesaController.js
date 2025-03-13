@@ -102,7 +102,6 @@ exports.initiateSTKPush = async (req, res) => {
 };
 
 
-// Handle callback from M-PESA
 exports.handleCallback = async (req, res) => {
   try {
     // M-PESA sends callback data in the request body
@@ -125,13 +124,13 @@ exports.handleCallback = async (req, res) => {
     if (!transaction) {
       console.log('Transaction not found initially for CheckoutRequestID:', checkoutRequestID);
       
-      // If transaction not found by checkoutRequestID, try to find by merchantRequestID
+      // Try to find by merchantRequestID
       transaction = await Transaction.findOne({ merchantRequestID: stkCallback.MerchantRequestID });
       
       if (!transaction) {
         console.error('Transaction not found for CheckoutRequestID:', checkoutRequestID);
         
-        // If this is a successful payment, create a new transaction record as a fallback
+        // Fallback: If payment successful, create a new transaction record as a recovery
         if (stkCallback.ResultCode === 0 && stkCallback.CallbackMetadata) {
           const callbackItems = stkCallback.CallbackMetadata.Item;
           const mpesaReceiptNumber = callbackItems.find(item => item.Name === 'MpesaReceiptNumber')?.Value;
@@ -139,7 +138,9 @@ exports.handleCallback = async (req, res) => {
           const phoneNumber = callbackItems.find(item => item.Name === 'PhoneNumber')?.Value;
           
           if (mpesaReceiptNumber && amount && phoneNumber) {
+            // IMPORTANT: Ensure you also store the associated userId when creating the transaction record.
             transaction = new Transaction({
+              userId: callbackData.userId, // You may need to pass this via the callback or retrieve it somehow.
               checkoutRequestID,
               merchantRequestID: stkCallback.MerchantRequestID,
               phoneNumber: phoneNumber.toString(),
@@ -156,7 +157,7 @@ exports.handleCallback = async (req, res) => {
             return res.status(404).json({ error: 'Transaction not found and recovery not possible' });
           }
         } else {
-          // Just acknowledge receipt to M-PESA even if we can't find the transaction
+          // Acknowledge receipt even if no matching transaction is found.
           return res.status(200).json({ success: true });
         }
       }
@@ -169,14 +170,12 @@ exports.handleCallback = async (req, res) => {
       const mpesaReceiptNumber = callbackItems.find(item => item.Name === 'MpesaReceiptNumber')?.Value;
       const transactionDate = callbackItems.find(item => item.Name === 'TransactionDate')?.Value;
       
-      // Update transaction record
       transaction.status = 'completed';
       if (mpesaReceiptNumber) {
         transaction.mpesaReceiptNumber = mpesaReceiptNumber;
       }
       
       if (transactionDate) {
-        // Convert the format from YYYYMMDDHHMMSS to a proper date
         const year = transactionDate.toString().substring(0, 4);
         const month = transactionDate.toString().substring(4, 6);
         const day = transactionDate.toString().substring(6, 8);
@@ -195,6 +194,32 @@ exports.handleCallback = async (req, res) => {
     
     // Save updated transaction
     await transaction.save();
+
+    // If the transaction is completed, post the transaction details to the contributions endpoint.
+    if (transaction.status === 'completed' && transaction.userId) {
+      try {
+        await axios.post(
+          `https://mwg-app-api.vercel.app/api/contributions/${transaction.userId}/contributions`,
+          {
+            phoneNumber: transaction.phoneNumber,
+            amount: transaction.amount,
+            merchantRequestID: transaction.merchantRequestID,
+            checkoutRequestID: transaction.checkoutRequestID,
+            mpesaReceiptNumber: transaction.mpesaReceiptNumber,
+            transactionDate: transaction.transactionDate,
+            status: transaction.status,
+          },
+          {
+            headers: {
+              "Content-Type": "application/json",
+            },
+          }
+        );
+        console.log("Transaction details sent to contributions endpoint.");
+      } catch (postError) {
+        console.error("Error posting transaction to contributions endpoint:", postError.response ? postError.response.data : postError.message);
+      }
+    }
     
     // Respond to M-PESA (required)
     return res.status(200).json({ success: true });
@@ -205,7 +230,6 @@ exports.handleCallback = async (req, res) => {
     return res.status(200).json({ success: true });
   }
 };
-
 // Get all transactions
 exports.getTransactions = async (req, res) => {
   try {
