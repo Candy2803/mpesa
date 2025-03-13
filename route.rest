@@ -1,0 +1,7 @@
+POST https://32ff-41-139-202-31.ngrok-free.app/api/mpesa/stkpush
+Content-Type: application/json
+
+{
+    "phoneNumber": "+254727862079",
+    "amount": "1"
+}
