@@ -200,6 +200,7 @@ exports.handleCallback = async (req, res) => {
 
 // Get all transactions
 exports.getTransactions = async (req, res) => {
+  console.log('Fetching transactions for user:', req.params.userId);
   try {
     // Expect the userId in the URL parameters
     const userId = req.params.userId;
