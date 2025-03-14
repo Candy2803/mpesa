@@ -1,7 +1,8 @@
-# POST http://192.168.1.201:5000/api/mpesa/stkpush/67c0a0a27576eaddfa294597
+# POST http://192.168.1.201:5000/api/mpesa/stkpush/${userId}
 # Content-Type: application/json
 
 # {
+#     "userId": "67c0a0a27576eaddfa294597",
 #     "phoneNumber": "+254727862079",
 #     "amount": "1"
 # }
