@@ -1,7 +1,9 @@
-POST https://mpesa-c874.vercel.app/api/mpesa/stkpush
-Content-Type: application/json
+# POST http://192.168.1.201:5000/api/mpesa/stkpush/67c0a0a27576eaddfa294597
+# Content-Type: application/json
 
-{
-    "phoneNumber": "+254727862079",
-    "amount": "1"
-}
+# {
+#     "phoneNumber": "+254727862079",
+#     "amount": "1"
+# }
+
+GET http://192.168.1.201:5000/api/mpesa/transactions/67c0a0a27576eaddfa294597

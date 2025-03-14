@@ -199,31 +199,37 @@ exports.handleCallback = async (req, res) => {
 };
 
 // Get all transactions
+// Get all transactions for a specific user (only "completed" transactions)
 exports.getTransactions = async (req, res) => {
-  console.log('Fetching transactions for user:', req.params.userId);
+  console.log("Fetching transactions for user:", req.params.userId);
   try {
     // Expect the userId in the URL parameters
     const userId = req.params.userId;
     if (!userId) {
-      return res.status(400).json({ success: false, message: 'User ID is required' });
+      return res.status(400).json({ success: false, message: "User ID is required" });
     }
     
-    const transactions = await Transaction.find({ userId }).sort({ createdAt: -1 });
+    // Only return transactions with a status of "completed"
+    const transactions = await Transaction.find({ 
+      userId, 
+      status: "completed" 
+    }).sort({ createdAt: -1 });
     
     return res.status(200).json({
       success: true,
       count: transactions.length,
-      data: transactions
+      data: transactions,
     });
   } catch (error) {
-    console.error('Error fetching transactions:', error);
+    console.error("Error fetching transactions:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch transactions',
-      error: error.message
+      message: "Failed to fetch transactions",
+      error: error.message,
     });
   }
 };
+
 
 
 // Get transaction by ID
