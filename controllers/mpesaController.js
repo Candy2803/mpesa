@@ -4,16 +4,18 @@ const mpesaConfig = require('../config/mpesa');
 const axios = require('axios');
 
 // Initiate STK Push
+// controllers/mpesaController.js
+
 exports.initiateSTKPush = async (req, res) => {
   try {
     const { phoneNumber, amount, reference, description, userId } = req.body;
     
-    // Validate required fields
+    
     if (!phoneNumber || !amount) {
-      return res.status(400).json({ error: 'Phone number and amount are required' });
+      return res.status(400).json({ error: 'Phone number, amount are required' });
     }
     
-    // Format phone number (e.g., remove leading 0 or +254)
+    // Format phone number
     let formattedPhone = phoneNumber;
     if (phoneNumber.startsWith('0')) {
       formattedPhone = '254' + phoneNumber.substring(1);
@@ -21,12 +23,10 @@ exports.initiateSTKPush = async (req, res) => {
       formattedPhone = phoneNumber.substring(1);
     }
     
-    // Get MPESA access token, timestamp, and password
     const token = await mpesaHelpers.getAccessToken();
     const timestamp = mpesaHelpers.generateTimestamp();
     const password = mpesaHelpers.generatePassword(timestamp);
     
-    // Prepare STK push request payload
     const stkPushRequestBody = {
       BusinessShortCode: mpesaConfig.shortcode,
       Password: password,
@@ -41,7 +41,6 @@ exports.initiateSTKPush = async (req, res) => {
       TransactionDesc: description || 'Payment'
     };
     
-    // Send STK push request to MPESA API
     const response = await axios.post(
       mpesaConfig.endpoints.stkPush(),
       stkPushRequestBody,
@@ -53,9 +52,9 @@ exports.initiateSTKPush = async (req, res) => {
       }
     );
     
-    // Create a new transaction record (initial status remains pending)
+    // Create a new transaction record including the userId
     const transaction = new Transaction({
-      userId,  // Save the logged-in user's ID
+      userId,  // save the logged in user's id
       phoneNumber: formattedPhone,
       amount,
       reference,
@@ -65,7 +64,6 @@ exports.initiateSTKPush = async (req, res) => {
       responseCode: response.data.ResponseCode,
       responseDescription: response.data.ResponseDescription,
       customerMessage: response.data.CustomerMessage,
-      status: "pending" // Set initial status as pending
     });
     
     await transaction.save();
@@ -95,15 +93,17 @@ exports.initiateSTKPush = async (req, res) => {
   }
 };
 
+
 // Handle callback from M-PESA
 exports.handleCallback = async (req, res) => {
   try {
     // M-PESA sends callback data in the request body
     const callbackData = req.body;
     
+    // Log the callback data for debugging
     console.log('M-PESA Callback Data:', JSON.stringify(callbackData, null, 2));
     
-    // Validate the callback structure
+    // Check if we have a valid callback
     if (!callbackData.Body || !callbackData.Body.stkCallback) {
       return res.status(400).json({ error: 'Invalid callback data' });
     }
@@ -111,15 +111,19 @@ exports.handleCallback = async (req, res) => {
     const stkCallback = callbackData.Body.stkCallback;
     const checkoutRequestID = stkCallback.CheckoutRequestID;
     
-    // Find the transaction record using checkoutRequestID
+    // Find the transaction by checkoutRequestID
     let transaction = await Transaction.findOne({ checkoutRequestID });
     
     if (!transaction) {
-      console.log('Transaction not found for CheckoutRequestID:', checkoutRequestID);
-      // Attempt to recover using merchantRequestID if possible
+      console.log('Transaction not found initially for CheckoutRequestID:', checkoutRequestID);
+      
+      // If transaction not found by checkoutRequestID, try to find by merchantRequestID
       transaction = await Transaction.findOne({ merchantRequestID: stkCallback.MerchantRequestID });
+      
       if (!transaction) {
-        // If still not found, and if this is a successful payment, try recovery
+        console.error('Transaction not found for CheckoutRequestID:', checkoutRequestID);
+        
+        // If this is a successful payment, create a new transaction record as a fallback
         if (stkCallback.ResultCode === 0 && stkCallback.CallbackMetadata) {
           const callbackItems = stkCallback.CallbackMetadata.Item;
           const mpesaReceiptNumber = callbackItems.find(item => item.Name === 'MpesaReceiptNumber')?.Value;
@@ -144,55 +148,60 @@ exports.handleCallback = async (req, res) => {
             return res.status(404).json({ error: 'Transaction not found and recovery not possible' });
           }
         } else {
-          // Acknowledge callback even if transaction not found
+          // Just acknowledge receipt to M-PESA even if we can't find the transaction
           return res.status(200).json({ success: true });
         }
       }
     }
     
-    // Update transaction only if the payment was successful (user entered MPESA PIN)
+    // Update transaction based on callback result
     if (stkCallback.ResultCode === 0 && stkCallback.CallbackMetadata) {
+      // Payment successful
       const callbackItems = stkCallback.CallbackMetadata.Item;
       const mpesaReceiptNumber = callbackItems.find(item => item.Name === 'MpesaReceiptNumber')?.Value;
       const transactionDate = callbackItems.find(item => item.Name === 'TransactionDate')?.Value;
       
-      transaction.status = 'completed';  // Only mark as completed if PIN was entered
+      // Update transaction record
+      transaction.status = 'completed';
       if (mpesaReceiptNumber) {
         transaction.mpesaReceiptNumber = mpesaReceiptNumber;
       }
       
       if (transactionDate) {
-        // Convert transaction date from YYYYMMDDHHMMSS format to a JavaScript Date
+        // Convert the format from YYYYMMDDHHMMSS to a proper date
         const year = transactionDate.toString().substring(0, 4);
         const month = transactionDate.toString().substring(4, 6);
         const day = transactionDate.toString().substring(6, 8);
         const hour = transactionDate.toString().substring(8, 10);
         const minute = transactionDate.toString().substring(10, 12);
         const second = transactionDate.toString().substring(12, 14);
+        
         transaction.transactionDate = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`);
       }
     } else {
-      // If payment failed or user canceled (did not enter PIN), mark as failed.
+      // Payment failed
       transaction.status = 'failed';
       transaction.responseCode = stkCallback.ResultCode;
       transaction.responseDescription = stkCallback.ResultDesc;
     }
     
-    // Save updated transaction record
+    // Save updated transaction
     await transaction.save();
     
-    // Always acknowledge receipt to M-PESA to prevent retries
+    // Respond to M-PESA (required)
     return res.status(200).json({ success: true });
     
   } catch (error) {
     console.error('Error handling M-PESA callback:', error);
+    // Always acknowledge the callback to M-PESA, even on errors
     return res.status(200).json({ success: true });
   }
 };
 
-// Get all transactions for a specific user (for contribution history)
+// Get all transactions
 exports.getTransactions = async (req, res) => {
   try {
+    // Expect the userId in the URL parameters
     const userId = req.params.userId;
     if (!userId) {
       return res.status(400).json({ success: false, message: 'User ID is required' });
@@ -215,16 +224,29 @@ exports.getTransactions = async (req, res) => {
   }
 };
 
+
 // Get transaction by ID
 exports.getTransactionById = async (req, res) => {
   try {
     const transaction = await Transaction.findById(req.params.id);
+    
     if (!transaction) {
-      return res.status(404).json({ success: false, message: 'Transaction not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'Transaction not found'
+      });
     }
-    return res.status(200).json({ success: true, data: transaction });
+    
+    return res.status(200).json({
+      success: true,
+      data: transaction
+    });
   } catch (error) {
     console.error('Error fetching transaction:', error);
-    return res.status(500).json({ success: false, message: 'Failed to fetch transaction', error: error.message });
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch transaction',
+      error: error.message
+    });
   }
 };
